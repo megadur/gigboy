@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import JSZip from 'jszip';
+import { PDFDocument } from 'pdf-lib';
 import {
   buildSongPdfFilename,
   exportSetlistPdfsZip,
@@ -76,5 +77,30 @@ describe('songPdfExport', () => {
 
     const firstPdf = await zip.files[files[0]].async('uint8array');
     expect(new TextDecoder().decode(firstPdf.slice(0, 5))).toBe('%PDF-');
+  });
+
+  it('auto-fits a long 11-stanza ballad onto a single page', async () => {
+    const stanza = `[A]Der Amtmann von Tondern, Henning Pogwisch,
+Schlägt mit der Faust auf den Eichentisch:
+Heut fahr ich selbst hinüber nach Sylt
+Und hol mir mit eigner Hand Zins und Gült.
+Gen Hörnum hat die Prunkbarke den Schnabel gewetzt,
+Ihr folgen die Ewer, kriegsvolkbesetzt.
+[E]Und ich höhn ihrem Wort:
+Lewwer [D]duad [C]üs [A]Slaav!`;
+
+    const longBallad = makeSong({
+      title: 'Pidder Lüng',
+      artist: 'Detlev von Liliencron',
+      chordpro: Array.from({ length: 11 }, () => stanza).join('\n\n'),
+    });
+
+    const bytes = await generateSongPdfBytes(longBallad, {
+      settings: { ...DEFAULT_PRINT_TYPOGRAPHY, columns: 'auto', pageSize: 'a4' },
+      setlistIndex: 5,
+    });
+
+    const doc = await PDFDocument.load(bytes);
+    expect(doc.getPageCount()).toBe(1);
   });
 });

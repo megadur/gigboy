@@ -164,13 +164,51 @@ function measureSegments(
   });
 }
 
-function wrapMeasuredSegments(segs: MeasuredSeg[], maxWidth: number): MeasuredSeg[][] {
+function wrapMeasuredSegments(
+  segs: MeasuredSeg[],
+  maxWidth: number,
+  lyricFont: PDFFont,
+  lyricPt: number,
+): MeasuredSeg[][] {
   if (segs.length === 0) return [[]];
+
+  // Break overly wide plain-lyric segments at word boundaries so long lines
+  // without chords never bleed into the neighbouring column.
+  const expanded: MeasuredSeg[] = [];
+  for (const seg of segs) {
+    if (!seg.chord && seg.width > maxWidth && seg.lyric.includes(' ')) {
+      const words = seg.lyric.split(/(\s+)/);
+      let chunk = '';
+      for (const word of words) {
+        const candidate = chunk + word;
+        if (chunk && lyricFont.widthOfTextAtSize(candidate, lyricPt) > maxWidth) {
+          expanded.push({
+            chord: '',
+            lyric: chunk.trimEnd(),
+            width: lyricFont.widthOfTextAtSize(chunk.trimEnd(), lyricPt),
+          });
+          chunk = word.trimStart();
+        } else {
+          chunk = candidate;
+        }
+      }
+      if (chunk) {
+        expanded.push({
+          chord: '',
+          lyric: chunk,
+          width: lyricFont.widthOfTextAtSize(chunk, lyricPt),
+        });
+      }
+    } else {
+      expanded.push(seg);
+    }
+  }
+
   const rows: MeasuredSeg[][] = [];
   let current: MeasuredSeg[] = [];
   let rowW = 0;
 
-  for (const seg of segs) {
+  for (const seg of expanded) {
     if (current.length > 0 && rowW + seg.width > maxWidth) {
       rows.push(current);
       current = [seg];
@@ -184,6 +222,177 @@ function wrapMeasuredSegments(segs: MeasuredSeg[], maxWidth: number): MeasuredSe
   return rows;
 }
 
+interface PdfLayoutMetrics {
+  cols: 1 | 2 | 3;
+  lyricPt: number;
+  chordPt: number;
+}
+
+function simulatePageCount(
+  items: RenderItem[],
+  cols: 1 | 2 | 3,
+  lyricPt: number,
+  chordPt: number,
+  dims: PageDimensions,
+  margin: number,
+  firstPageTopY: number,
+  transpose: number,
+  notation: ChordNotation,
+  showChords: boolean,
+  lyricFont: PDFFont,
+  chordFont: PDFFont,
+): number {
+  const colGap = cols > 1 ? 20 : 0;
+  const colWidth = (dims.width - margin * 2 - colGap * (cols - 1)) / cols;
+  const sectionPt = Math.max(7, lyricPt * 0.85);
+  const lyricLineH = lyricPt * 1.3;
+  const chordLineH = chordPt * 1.16;
+  const emptyH = lyricPt * 0.65;
+
+  let pages = 1;
+  let colIndex = 0;
+  let colTopY = firstPageTopY;
+  let y = colTopY;
+
+  const advance = () => {
+    colIndex++;
+    if (colIndex >= cols) {
+      pages++;
+      colIndex = 0;
+      colTopY = dims.height - margin;
+    }
+    y = colTopY;
+  };
+
+  const ensure = (needed: number) => {
+    if (y - needed < margin && y < colTopY - 1) {
+      advance();
+    }
+  };
+
+  const estimateHeight = (item: RenderItem): number => {
+    if (item.kind === 'empty') return emptyH;
+    if (item.kind === 'section') return sectionPt * 1.55 + 4;
+    if (item.kind === 'mono-block') {
+      const monoPt = Math.max(6.5, lyricPt * 0.78);
+      return (item.label ? sectionPt * 1.4 : 0) + item.lines.length * (monoPt * 1.2) + 6;
+    }
+    const measured = measureSegments(item.segments, transpose, notation, showChords, lyricFont, lyricPt, chordFont, chordPt);
+    const rows = wrapMeasuredSegments(measured, colWidth, lyricFont, lyricPt);
+    const drawChords = showChords && item.hasChords;
+    const isChordOnly = drawChords && item.segments.every((s) => !s.lyric.trim());
+    const rowH = (drawChords ? chordLineH : 0) + (isChordOnly ? 2 : lyricLineH) + 2;
+    return rows.length * rowH;
+  };
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (item.kind === 'empty') {
+      if (y < colTopY - 1) y -= emptyH;
+      continue;
+    }
+    if (item.kind === 'section') {
+      const next = items[i + 1];
+      const nextH = next && next.kind !== 'empty' ? Math.min(estimateHeight(next), lyricLineH * 2 + chordLineH) : 0;
+      ensure(sectionPt * 1.55 + 4 + nextH);
+      if (y < colTopY - 1) y -= 4;
+      y -= sectionPt + sectionPt * 0.55;
+      continue;
+    }
+    if (item.kind === 'mono-block') {
+      const monoPt = Math.max(6.5, lyricPt * 0.78);
+      const blockH = (item.label ? sectionPt * 1.4 : 0) + item.lines.length * (monoPt * 1.2) + 6;
+      ensure(blockH);
+      if (item.label) y -= sectionPt + 4;
+      for (let j = 0; j < item.lines.length; j++) {
+        ensure(monoPt * 1.2);
+        y -= monoPt * 1.15;
+      }
+      y -= 4;
+      continue;
+    }
+    const measured = measureSegments(item.segments, transpose, notation, showChords, lyricFont, lyricPt, chordFont, chordPt);
+    const rows = wrapMeasuredSegments(measured, colWidth, lyricFont, lyricPt);
+    const drawChords = showChords && item.hasChords;
+    const isChordOnly = drawChords && item.segments.every((s) => !s.lyric.trim());
+    const rowH = (drawChords ? chordLineH : 0) + (isChordOnly ? 2 : lyricLineH) + 2;
+    for (let r = 0; r < rows.length; r++) {
+      ensure(rowH);
+      y -= rowH;
+    }
+  }
+
+  return pages;
+}
+
+/**
+ * In Auto mode, picks the (columns, font-size) combination that fits the entire
+ * song onto a single page at the largest readable font size (preferring fewer
+ * columns on ties).
+ */
+function chooseAutoPdfLayout(
+  items: RenderItem[],
+  baseLyricPt: number,
+  baseChordPt: number,
+  dims: PageDimensions,
+  margin: number,
+  firstPageTopY: number,
+  transpose: number,
+  notation: ChordNotation,
+  showChords: boolean,
+  lyricFont: PDFFont,
+  chordFont: PDFFont,
+): PdfLayoutMetrics {
+  const minLyricPt = 7.0;
+  const minScale = Math.min(1, minLyricPt / baseLyricPt);
+
+  let best: PdfLayoutMetrics | null = null;
+
+  for (const cols of [1, 2, 3] as const) {
+    // Fast check: fits at full base size?
+    const fullPages = simulatePageCount(
+      items, cols, baseLyricPt, baseChordPt, dims, margin, firstPageTopY,
+      transpose, notation, showChords, lyricFont, chordFont,
+    );
+    if (fullPages === 1) {
+      // Full size already fits — fewer columns always wins over more columns at same size.
+      return { cols, lyricPt: baseLyricPt, chordPt: baseChordPt };
+    }
+
+    // Check if it fits at the minimum readable size for this column count.
+    const minPages = simulatePageCount(
+      items, cols, baseLyricPt * minScale, baseChordPt * minScale, dims, margin, firstPageTopY,
+      transpose, notation, showChords, lyricFont, chordFont,
+    );
+    if (minPages > 1) continue;
+
+    // Binary search for the largest scale in [minScale, 1] that fits on 1 page.
+    let lo = minScale;
+    let hi = 1;
+    for (let iter = 0; iter < 10; iter++) {
+      const mid = (lo + hi) / 2;
+      const p = simulatePageCount(
+        items, cols, baseLyricPt * mid, baseChordPt * mid, dims, margin, firstPageTopY,
+        transpose, notation, showChords, lyricFont, chordFont,
+      );
+      if (p === 1) lo = mid;
+      else hi = mid;
+    }
+
+    const candidate: PdfLayoutMetrics = {
+      cols,
+      lyricPt: Math.floor(baseLyricPt * lo * 20) / 20,
+      chordPt: Math.floor(baseChordPt * lo * 20) / 20,
+    };
+
+    if (!best || candidate.lyricPt > best.lyricPt + 0.15) {
+      best = candidate;
+    }
+  }
+
+  return best ?? { cols: 2, lyricPt: baseLyricPt * minScale, chordPt: baseChordPt * minScale };
+}
+
 /**
  * Generates a standalone vector PDF document for a single song, applying the
  * chosen column layout, fonts, sizes, page size, and transpose.
@@ -191,7 +400,6 @@ function wrapMeasuredSegments(segs: MeasuredSeg[], maxWidth: number): MeasuredSe
 export async function generateSongPdfBytes(song: Song, options: SongPdfOptions): Promise<Uint8Array> {
   const { settings, transpose = 0, notation = 'anglo', setlistIndex, setlistNote } = options;
   const dims = PAGE_DIMS[settings.pageSize];
-  const cols = resolveColumns(settings.columns, song.chordpro, settings.lyricSize);
 
   const pdfDoc = await PDFDocument.create();
   pdfDoc.setTitle(sanitizeWinAnsi(song.title));
@@ -206,16 +414,12 @@ export async function generateSongPdfBytes(song: Song, options: SongPdfOptions):
   const monoFont = await pdfDoc.embedFont(StandardFonts.Courier);
 
   // Convert CSS px sliders into clean typographic PDF points.
-  const lyricPt = Math.max(7.5, settings.lyricSize * 0.78);
-  const chordPt = Math.max(7, settings.chordSize * 0.78);
-  const sectionPt = Math.max(7.5, lyricPt * 0.85);
-  const titlePt = Math.max(15, lyricPt * 1.45);
-  const metaPt = Math.max(8.5, lyricPt * 0.82);
+  const baseLyricPt = Math.max(7.5, settings.lyricSize * 0.78);
+  const baseChordPt = Math.max(7, settings.chordSize * 0.78);
+  const titlePt = Math.max(15, baseLyricPt * 1.45);
+  const metaPt = Math.max(8.5, baseLyricPt * 0.82);
 
   const margin = 36;
-  const colGap = cols > 1 ? 20 : 0;
-  const contentWidth = dims.width - margin * 2;
-  const colWidth = (contentWidth - colGap * (cols - 1)) / cols;
 
   const ink = rgb(0.08, 0.08, 0.08);
   const muted = rgb(0.35, 0.35, 0.35);
@@ -274,8 +478,27 @@ export async function generateSongPdfBytes(song: Song, options: SongPdfOptions):
     color: ruleColor,
   });
 
-  let colIndex = 0;
+  const items = flattenLines(parseChordPro(song.chordpro));
   let colTopY = headerY - 14;
+
+  const layout: PdfLayoutMetrics = settings.columns === 'auto'
+    ? chooseAutoPdfLayout(
+      items, baseLyricPt, baseChordPt, dims, margin, colTopY,
+      transpose, notation, settings.showChords, lyricFont, chordFont,
+    )
+    : {
+      cols: resolveColumns(settings.columns, song.chordpro, settings.lyricSize),
+      lyricPt: baseLyricPt,
+      chordPt: baseChordPt,
+    };
+
+  const { cols, lyricPt, chordPt } = layout;
+  const sectionPt = Math.max(7, lyricPt * 0.85);
+  const colGap = cols > 1 ? 20 : 0;
+  const contentWidth = dims.width - margin * 2;
+  const colWidth = (contentWidth - colGap * (cols - 1)) / cols;
+
+  let colIndex = 0;
   let y = colTopY;
 
   const colX = () => margin + colIndex * (colWidth + colGap);
@@ -296,18 +519,22 @@ export async function generateSongPdfBytes(song: Song, options: SongPdfOptions):
     }
   };
 
-  const items = flattenLines(parseChordPro(song.chordpro));
-  const lyricLineH = lyricPt * 1.32;
-  const chordLineH = chordPt * 1.18;
-  const emptyH = lyricPt * 0.7;
+  const lyricLineH = lyricPt * 1.3;
+  const chordLineH = chordPt * 1.16;
+  const emptyH = lyricPt * 0.65;
 
   const estimateItemHeight = (item: RenderItem): number => {
     if (item.kind === 'empty') return emptyH;
-    if (item.kind === 'section') return sectionPt * 1.6 + 4;
-    if (item.kind === 'mono-block') return (item.label ? sectionPt * 1.4 : 0) + item.lines.length * (lyricPt * 0.95) + 6;
+    if (item.kind === 'section') return sectionPt * 1.55 + 4;
+    if (item.kind === 'mono-block') {
+      const monoPt = Math.max(6.5, lyricPt * 0.78);
+      return (item.label ? sectionPt * 1.4 : 0) + item.lines.length * (monoPt * 1.2) + 6;
+    }
     const measured = measureSegments(item.segments, transpose, notation, settings.showChords, lyricFont, lyricPt, chordFont, chordPt);
-    const rows = wrapMeasuredSegments(measured, colWidth);
-    const rowH = (settings.showChords && item.hasChords ? chordLineH : 0) + lyricLineH + 2;
+    const rows = wrapMeasuredSegments(measured, colWidth, lyricFont, lyricPt);
+    const drawChords = settings.showChords && item.hasChords;
+    const isChordOnly = drawChords && item.segments.every((s) => !s.lyric.trim());
+    const rowH = (drawChords ? chordLineH : 0) + (isChordOnly ? 2 : lyricLineH) + 2;
     return rows.length * rowH;
   };
 
@@ -324,7 +551,7 @@ export async function generateSongPdfBytes(song: Song, options: SongPdfOptions):
     if (item.kind === 'section') {
       const nextItem = items[i + 1];
       const nextH = nextItem && nextItem.kind !== 'empty' ? Math.min(estimateItemHeight(nextItem), lyricLineH * 2 + chordLineH) : 0;
-      ensureSpace(sectionPt * 1.6 + 4 + nextH);
+      ensureSpace(sectionPt * 1.55 + 4 + nextH);
       if (y < colTopY - 1) y -= 4;
       y -= sectionPt;
       page.drawText(sanitizeWinAnsi(item.label.toUpperCase()), {
@@ -339,7 +566,7 @@ export async function generateSongPdfBytes(song: Song, options: SongPdfOptions):
     }
 
     if (item.kind === 'mono-block') {
-      const monoPt = Math.max(7, lyricPt * 0.78);
+      const monoPt = Math.max(6.5, lyricPt * 0.78);
       const blockH = (item.label ? sectionPt * 1.4 : 0) + item.lines.length * (monoPt * 1.2) + 6;
       ensureSpace(blockH);
       if (item.label) {
@@ -379,7 +606,7 @@ export async function generateSongPdfBytes(song: Song, options: SongPdfOptions):
       chordFont,
       chordPt,
     );
-    const rows = wrapMeasuredSegments(measured, colWidth);
+    const rows = wrapMeasuredSegments(measured, colWidth, lyricFont, lyricPt);
     const drawChords = settings.showChords && item.hasChords;
     const isChordOnly = drawChords && item.segments.every((s) => !s.lyric.trim());
 
