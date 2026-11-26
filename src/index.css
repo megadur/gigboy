@@ -9176,7 +9176,7 @@ input, select, textarea { font: inherit; color: var(--text); }
 .print-chart-columns .chord-display {
   column-count: var(--print-cols, 1);
   column-gap: 1.75rem;
-  column-fill: auto;
+  column-fill: balance;
   background: transparent;
   border: none;
   border-radius: 0;

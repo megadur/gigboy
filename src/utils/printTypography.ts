@@ -133,10 +133,10 @@ export function resolveAutoColumns(chordpro: string, lyricSize: number): 1 | 2 |
   if (visualLines <= singleColLineBudget) return 1;
 
   // Approximate max characters that comfortably fit in a 2-col or 3-col strip.
-  const twoColCharBudget = Math.round(620 / Math.max(10, lyricSize));
-  const threeColCharBudget = Math.round(390 / Math.max(10, lyricSize));
+  const twoColCharBudget = Math.round(820 / Math.max(10, lyricSize));
+  const threeColCharBudget = Math.round(520 / Math.max(10, lyricSize));
 
-  if (visualLines > singleColLineBudget * 1.9 && maxChars <= threeColCharBudget) {
+  if (visualLines > singleColLineBudget * 1.8 && maxChars <= threeColCharBudget) {
     return 3;
   }
   if (maxChars <= twoColCharBudget) {
