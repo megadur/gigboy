@@ -204,8 +204,12 @@ export default function BandSetlistPrintPage() {
               return (
                 <li key={song.id}>
                   <span className="setlist-print-song-title">{song.title}</span>
-                  {song.artist && <span className="setlist-print-song-artist"> — {song.artist}</span>}
-                  {meta && <span className="setlist-print-song-meta"> ({meta})</span>}
+                  {(song.artist || meta) && (
+                    <span className="setlist-print-song-details">
+                      {song.artist && <span className="setlist-print-song-artist">— {song.artist}</span>}
+                      {meta && <span className="setlist-print-song-meta">{song.artist ? ' ' : '— '}({meta})</span>}
+                    </span>
+                  )}
                   {note && <span className="setlist-print-song-note">{note}</span>}
                 </li>
               );

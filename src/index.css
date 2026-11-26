@@ -8890,10 +8890,16 @@ input, select, textarea { font: inherit; color: var(--text); }
   line-height: 1.35;
 }
 
-.setlist-print-song-title { font-weight: 700; }
+.setlist-print-song-title { font-weight: 700; display: block; }
+.setlist-print-song-details {
+  display: block;
+  font-size: 0.78em;
+  line-height: 1.3;
+  margin-top: 0.1em;
+}
 .setlist-print-song-artist { font-weight: 400; color: #444; }
-.setlist-print-song-meta { color: #666; font-size: .8em; }
-.setlist-print-song-note { display: block; font-size: .72em; color: #666; font-style: italic; }
+.setlist-print-song-meta { color: #666; }
+.setlist-print-song-note { display: block; font-size: .72em; color: #666; font-style: italic; margin-top: 0.1em; }
 
 .setlist-print-charts { display: flex; flex-direction: column; gap: var(--space-4xl); }
 .setlist-print-chart-header { margin-bottom: var(--space-lg); border-bottom: 1px solid #ddd; padding-bottom: var(--space-sm); }
