@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
-import { Music2, Repeat2, GitBranch, ArrowRight, Guitar, ArrowDownUp } from 'lucide-react';
+import { Music2, Repeat2, GitBranch, ArrowRight, Guitar, ArrowDownUp, Replace } from 'lucide-react';
 import TabSequencerModal from './TabSequencerModal';
 import StrumEditorModal from './StrumEditorModal';
 import { serializeStrumBlock, uniqueChords, type StrumBlock } from '../utils/strumParser';
 import ChordFinderModal from './ChordFinderModal';
 import ChordSearchPanel from './ChordSearchPanel';
+import FindReplaceModal from './FindReplaceModal';
 import { extractRecentChords } from '../utils/chordNames';
 import { diatonicChords } from '../utils/musicTheory';
 import { insertChordAtSelection } from '../utils/chordInsertion';
@@ -89,6 +90,8 @@ export default function ChordProToolbar({ textareaRef, value, onChange, tempo, t
   const [showStrumEditor, setShowStrumEditor] = useState(false);
   const [showChordFinder, setShowChordFinder] = useState(false);
   const [showChordPopover, setShowChordPopover] = useState(false);
+  const [showFindReplace, setShowFindReplace] = useState(false);
+  const [initialFindText, setInitialFindText] = useState('');
   const chordWrapRef = useRef<HTMLDivElement>(null);
   const showChordFinderRef = useRef(false);
 
@@ -115,6 +118,32 @@ export default function ChordProToolbar({ textareaRef, value, onChange, tempo, t
     document.addEventListener('mousedown', handleOutside);
     return () => document.removeEventListener('mousedown', handleOutside);
   }, [showChordPopover]);
+
+  function openFindReplace() {
+    const textarea = textareaRef.current;
+    if (textarea && textarea.selectionStart !== textarea.selectionEnd) {
+      const selected = value.slice(textarea.selectionStart, textarea.selectionEnd);
+      if (!selected.includes('\n') && selected.length <= 60) {
+        setInitialFindText(selected);
+      } else {
+        setInitialFindText('');
+      }
+    } else {
+      setInitialFindText('');
+    }
+    setShowFindReplace(true);
+  }
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        openFindReplace();
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  });
 
   function handleSectionClick(name: string) {
     if (!textareaRef.current) return;
@@ -199,6 +228,14 @@ export default function ChordProToolbar({ textareaRef, value, onChange, tempo, t
         onClose={() => setShowChordFinder(false)}
       />
     )}
+    {showFindReplace && (
+      <FindReplaceModal
+        value={value}
+        initialFind={initialFindText}
+        onReplace={onChange}
+        onClose={() => setShowFindReplace(false)}
+      />
+    )}
     <div className="chordpro-toolbar">
       <div className="toolbar-group">
         <div className="toolbar-chord-btn-wrap" ref={chordWrapRef}>
@@ -271,6 +308,20 @@ export default function ChordProToolbar({ textareaRef, value, onChange, tempo, t
         >
           <ArrowDownUp size={13} />
           Insert Strum
+        </button>
+      </div>
+
+      <div className="toolbar-divider" />
+
+      <div className="toolbar-group">
+        <button
+          type="button"
+          className="toolbar-btn"
+          onClick={openFindReplace}
+          title="Find & replace in lyrics or chords (Ctrl/Cmd+F)"
+        >
+          <Replace size={13} />
+          Find &amp; Replace
         </button>
       </div>
     </div>

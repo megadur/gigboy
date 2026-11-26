@@ -20,6 +20,7 @@ import {
   Metronome,
   Search,
   History,
+  Printer,
   X,
 } from 'lucide-react';
 import toast from '../utils/anchoredToast';
@@ -911,6 +912,18 @@ export default function SongView({ song, accentColor, bandId }: Props) {
               >
                 <FileDown size={14} />
                 <span className="song-action-label">Download</span>
+              </button>
+
+              <button
+                className="song-action-btn song-action-btn--labeled song-action-btn--print"
+                onClick={() => navigate(`/songs/${song.id}/print`, {
+                  state: { backTo: location.pathname, bandId, transpose, notation: chordNotation },
+                })}
+                title={`Print or export ${song.title} as PDF`}
+                aria-label={`Print or export ${song.title} as PDF`}
+              >
+                <Printer size={14} />
+                <span className="song-action-label">Print / PDF</span>
               </button>
               <input
                 ref={updateFromFileInputRef}

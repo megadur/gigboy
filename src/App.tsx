@@ -24,6 +24,7 @@ const BandMembersPage = lazy(() => import('./pages/BandMembersPage'));
 const BandGigsPage = lazy(() => import('./pages/BandGigsPage'));
 const SongPage = lazy(() => import('./pages/SongPage'));
 const SongConcertPage = lazy(() => import('./pages/SongConcertPage'));
+const SongPrintPage = lazy(() => import('./pages/SongPrintPage'));
 const EditSongPage = lazy(() => import('./pages/EditSongPage'));
 const AdminInvitesPage = lazy(() => import('./pages/AdminInvitesPage'));
 const AdminUsersPage = lazy(() => import('./pages/AdminUsersPage'));
@@ -164,6 +165,7 @@ function AuthenticatedApp() {
           <Route path="/songs/new" element={<AddSongPage />} />
           <Route path="/songs/:id" element={<SongPage />} />
           <Route path="/songs/:id/concert" element={<SongConcertPage />} />
+          <Route path="/songs/:id/print" element={<SongPrintPage />} />
           <Route path="/songs/:id/edit" element={<EditSongPage />} />
           <Route path="/bands/:bandId/setlists/:setlistId/concert" element={<BandSetlistConcertPage />} />
           <Route path="/bands/:bandId/setlists/:setlistId/print" element={<BandSetlistPrintPage />} />
